@@ -853,7 +853,7 @@ class ClientThread(threading.Thread):
             try:
                 if self.client_socket and not getattr(self.client_socket, '_closed', False):
                     self.client_socket.close()
-            except:
+            except Exception:
                 pass
                 
         except Exception as e:
@@ -980,7 +980,7 @@ class IMServer:
         if self.server_socket:
             try:
                 self.server_socket.close()
-            except:
+            except Exception:
                 pass
         
         # 等待服务器线程结束
@@ -994,17 +994,17 @@ class IMServer:
         if self.log_callback:
             try:
                 self.log_callback(message)
-            except:
+            except Exception:
                 pass
         logger.info(message)
     
-    def log_callback(self, message: str):
-        """设置日志回调"""
-        self.log_callback = lambda msg: None
-    
-    def monitor_callback(self, message: str):
-        """设置监控回调"""
-        self.monitor_callback = lambda msg: None
+    def set_log_callback(self, callback):
+        """设置日志回调函数"""
+        self.log_callback = callback
+
+    def set_monitor_callback(self, callback):
+        """设置监控回调函数"""
+        self.monitor_callback = callback
     
     def client_connected(self, ip: str):
         """客户端连接回调"""

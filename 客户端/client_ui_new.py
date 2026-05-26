@@ -91,7 +91,7 @@ class CaptchaGenerator:
         """验证用户答案"""
         try:
             return str(user_answer.strip()) == str(correct_answer)
-        except:
+        except Exception:
             return False
 
 class ModernButton(QPushButton):

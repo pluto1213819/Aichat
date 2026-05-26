@@ -579,7 +579,7 @@ class NetworkClient:
         if self.socket:
             try:
                 self.socket.close()
-            except:
+            except Exception:
                 pass
         
         logger.info("🔒 连接已关闭")

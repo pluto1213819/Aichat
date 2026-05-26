@@ -1,49 +1,58 @@
-# Nova Chatting - 即时通讯系统
+﻿# Nova Chatting
 
-一个基于 PyQt5 和 Socket 的即时通讯系统，支持用户注册、登录、好友管理、实时聊天等功能。
+基于 PyQt5 和 Socket 的局域网即时通讯系统，支持用户注册登录、好友管理、实时聊天、群组通信等功能。
 
 ## 功能特性
 
-- 用户注册与登录
-- 好友添加与管理
-- 实时消息收发
-- 头像自定义（支持默认头像和自定义上传）
-- 消息历史记录
-- 验证码安全验证
-- 用户状态显示（在线/离线）
+- **用户系统** — 注册、登录、密码找回、个人资料编辑、头像自定义
+- **好友管理** — 搜索用户、发送/接受/拒绝好友请求、好友列表
+- **即时通讯** — 一对一私聊、群组聊天、离线消息存储与推送
+- **文件传输** — 支持文件发送与接收
+- **安全机制** — 密码哈希存储（bcrypt）、验证码校验、账号锁定策略
+- **服务端管理** — 在线用户监控、用户管理（增删改查）、系统状态面板、实时日志
+- **状态显示** — 用户在线/离线状态实时更新
 
-## 项目结构
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| GUI 框架 | PyQt5 >= 5.15.0 |
+| 网络通信 | Python Socket + 自定义帧协议（4字节长度头 + JSON） |
+| 数据存储 | SQLite3 |
+| 密码加密 | bcrypt / hashlib |
+| 数据格式 | JSON |
+| 并发模型 | threading 多线程 |
+
+## 目录结构
 
 ```
-通讯/
-├── 客户端/                 # 客户端代码
-│   ├── client.py          # 客户端主程序入口
-│   ├── client_network.py  # 网络通信模块
-│   ├── client_ui_new.py   # 用户界面模块
-│   ├── friend_request_manager.py  # 好友请求管理
-│   ├── config.json        # 客户端配置
-│   ├── requirements.txt   # 依赖包
-│   ├── m.webp             # 默认男性头像
-│   ├── w.webp             # 默认女性头像
-│   └── cons/              # 资源文件
+Wechat/
+├── 客户端/                        # 客户端代码
+│   ├── client.py                 # 客户端入口
+│   ├── client_network.py         # 网络通信模块
+│   ├── client_ui_new.py          # 主界面（登录/聊天）
+│   ├── friend_request_manager.py # 好友请求管理窗口
+│   ├── config.json               # 客户端配置
+│   ├── requirements.txt          # Python 依赖
+│   ├── m.webp / w.webp           # 默认头像（男/女）
+│   └── cons/                     # 图标资源
 │
-├── 服务端/                 # 服务端代码
-│   ├── server.py          # 服务端主程序入口
-│   ├── network_server.py  # 网络服务模块
-│   ├── server_ui.py       # 服务端管理界面
-│   ├── user_ui.py         # 用户管理界面
-│   ├── database.py        # 数据库操作模块
-│   ├── im_database.db     # SQLite 数据库
-│   ├── config.json        # 服务端配置
-│   └── requirements.txt   # 依赖包
+├── 服务端/                        # 服务端代码
+│   ├── server.py                 # 服务端入口
+│   ├── network_server.py         # 网络服务与客户端线程管理
+│   ├── server_ui.py              # 服务端管理界面
+│   ├── user_ui.py                # 用户管理界面
+│   ├── database.py               # 数据库操作模块
+│   ├── config.json               # 服务端配置
+│   └── requirements.txt          # Python 依赖
 │
-└── README.md              # 项目说明文档
+└── README.md
 ```
 
 ## 环境要求
 
 - Python 3.8+
-- PyQt5 >= 5.15.0
+- 操作系统：Windows / macOS / Linux
 
 ## 安装与运行
 
@@ -65,81 +74,69 @@ pip install -r requirements.txt
 **服务端：**
 ```bash
 cd 服务端
-pip install PyQt5>=5.15.0
+pip install -r requirements.txt
 ```
 
-### 3. 运行程序
+### 3. 启动程序
 
-**启动服务端：**
+**先启动服务端：**
 ```bash
 cd 服务端
 python server.py
 ```
 
-**启动客户端：**
+**再启动客户端：**
 ```bash
 cd 客户端
 python client.py
 ```
 
-## 使用说明
-
-### 服务端管理
-
-1. 启动服务端后，会显示管理界面
-2. 可以查看在线用户、注册用户列表
-3. 支持用户管理（添加、编辑、删除用户）
-4. 可配置服务器端口和参数
-
-### 客户端使用
-
-1. 启动客户端后，进入登录界面
-2. 新用户点击"注册账号"进行注册
-3. 已有账号直接输入用户名密码登录
-4. 登录后可以：
-   - 添加好友
-   - 查看好友列表
-   - 发送/接收消息
-   - 修改个人信息和头像
+> **注意：** 必须先启动服务端，客户端才能正常连接。默认监听地址 `127.0.0.1:8000`。
 
 ## 配置说明
 
-### 客户端配置 (config.json)
+### 客户端配置 (`客户端/config.json`)
 
 ```json
 {
-    "server": "127.0.0.1",
-    "port": 8000
+  "server": { "host": "127.0.0.1", "port": 8000 },
+  "user": { "username": "", "remember_password": false, "auto_login": false },
+  "chat": { "font_size": 12, "font_family": "Microsoft YaHei UI", "show_timestamp": true }
 }
 ```
 
-### 服务端配置 (config.json)
+### 服务端配置 (`服务端/config.json`)
 
 ```json
 {
-    "host": "0.0.0.0",
-    "port": 8000
+  "server": { "host": "127.0.0.1", "port": 8000, "max_connections": 100 },
+  "database": { "path": "im_database.db", "backup_enabled": true, "backup_interval_hours": 24 },
+  "security": { "password_min_length": 6, "max_login_attempts": 5, "lock_duration_hours": 24 },
+  "avatars": { "max_size_mb": 2, "allowed_formats": ["png", "jpg", "jpeg", "gif"] },
+  "logging": { "level": "INFO", "max_files": 10, "max_size_mb": 10 }
 }
 ```
 
-## 技术栈
+## 使用说明
 
-- **GUI**: PyQt5
-- **数据库**: SQLite3
-- **网络通信**: Python Socket
-- **数据格式**: JSON
+### 服务端
 
-## 注意事项
+1. 启动后显示管理控制台，可查看在线用户和系统状态
+2. 支持用户的增删改查和锁定/解锁操作
+3. 实时日志面板记录所有网络事件
+4. 可配置服务器端口、心跳间隔等参数
 
-1. 确保服务端先启动，客户端才能正常连接
-2. 默认服务器地址为 `127.0.0.1:8000`
-3. 头像文件支持 webp、png、jpg 格式
-4. 数据库文件会自动创建，无需手动初始化
+### 客户端
 
-## 许可证
+1. 启动后进入登录界面，新用户点击"注册账号"
+2. 登录后可添加好友、查看好友列表、收发消息
+3. 支持修改个人信息和自定义头像
+4. 支持群组聊天和文件传输
+
+## License
 
 MIT License
 
-## 作者
+## Author
 
 pluto1213819
