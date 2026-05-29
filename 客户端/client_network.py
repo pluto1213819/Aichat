@@ -401,6 +401,49 @@ class NetworkClient:
         msg = {'type': 'get_groups'}
         return self.send_message(msg)
     
+
+    def get_group_members(self, group_id):
+        """获取群成员列表"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'get_group_members', 'group_id': group_id})
+
+    def search_groups(self, keyword):
+        """搜索群组"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'search_groups', 'keyword': keyword})
+
+    def invite_to_group(self, group_id, target_username):
+        """邀请用户加入群组"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'invite_to_group', 'group_id': group_id, 'target_username': target_username})
+
+    def dissolve_group(self, group_id):
+        """解散群组"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'dissolve_group', 'group_id': group_id})
+
+    def kick_group_member(self, group_id, target_username):
+        """踢出群成员"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'kick_group_member', 'group_id': group_id, 'target_username': target_username})
+
+    def get_group_chat_history(self, group_id, limit=50):
+        """获取群聊历史"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'get_group_chat_history', 'group_id': group_id, 'limit': limit})
+
+    def delete_friend(self, target_username):
+        """删除好友"""
+        if not self.authenticated:
+            return False
+        return self.send_message({'type': 'delete_friend', 'target_username': target_username})
+
     def get_offline_messages(self):
         """获取离线消息"""
         if not self.authenticated:
@@ -452,14 +495,40 @@ class NetworkClient:
     
     def update_profile(self, **kwargs):
         """更新个人资料"""
-        if not self.authenticated:
+        if not self.authenticated or not self.connected:
             return False
         
-        msg = {
-            'type': 'update_profile',
-            **kwargs
-        }
-        return self.send_message(msg)
+        try:
+            msg = {
+                'type': 'update_profile',
+                **kwargs
+            }
+            
+            # 使用 send_message 而不是直接发送，让消息队列处理响应
+            self.send_message(msg)
+            
+            # 等待响应（最多5秒）
+            import time
+            timeout = 5
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                # 检查消息队列中是否有响应
+                for i, queued_msg in enumerate(self.message_queue):
+                    if queued_msg.get('type') == 'profile_updated':
+                        # 找到响应，移除并返回结果
+                        success = queued_msg.get('success', False)
+                        del self.message_queue[i]
+                        logger.info(f"个人资料更新成功: {success}")
+                        return success
+                time.sleep(0.1)
+            
+            logger.error("更新个人资料超时")
+            return False
+            
+        except Exception as e:
+            logger.error(f"更新个人资料异常: {e}")
+            return False
     
     def logout(self):
         """注销"""
@@ -570,6 +639,83 @@ class NetworkClient:
                 return None
         return data
     
+    # ===== AI 智能体通信方法 =====
+
+    def ai_chat(self, message):
+        """发送 AI 对话消息"""
+        return self.send_message_direct({
+            'type': 'ai_chat',
+            'content': message
+        })
+
+    def ai_summarize(self, text):
+        """请求 AI 摘要"""
+        return self.send_message_direct({
+            'type': 'ai_summarize',
+            'content': text
+        })
+
+    def ai_translate(self, text, target_lang='英文'):
+        """请求 AI 翻译"""
+        return self.send_message_direct({
+            'type': 'ai_translate',
+            'content': text,
+            'target_lang': target_lang
+        })
+
+    def ai_polish(self, text):
+        """请求 AI 润色"""
+        return self.send_message_direct({
+            'type': 'ai_polish',
+            'content': text
+        })
+
+    def ai_suggest_reply(self, chat_history):
+        """请求智能回复建议"""
+        return self.send_message_direct({
+            'type': 'ai_suggest_reply',
+            'chat_history': chat_history
+        })
+
+    def ai_sentiment(self, text):
+        """请求情感分析"""
+        return self.send_message_direct({
+            'type': 'ai_sentiment',
+            'content': text
+        })
+
+    def ai_toggle_auto_reply(self, enabled):
+        """开关自动应答"""
+        return self.send_message_direct({
+            'type': 'ai_toggle_auto_reply',
+            'enabled': enabled
+        })
+
+    def ai_get_settings(self):
+        """获取 AI 设置"""
+        return self.send_message_direct({
+            'type': 'ai_get_settings'
+        })
+
+    def ai_clear_history(self):
+        """清除 AI 对话历史"""
+        return self.send_message_direct({
+            'type': 'ai_clear_history'
+        })
+
+    def ai_get_history(self):
+        """获取 AI 对话历史"""
+        return self.send_message_direct({
+            'type': 'ai_get_history'
+        })
+
+    def ai_smart_replies(self, message):
+        """获取快捷回复建议"""
+        return self.send_message_direct({
+            'type': 'ai_smart_replies',
+            'message': message
+        })
+
     def close(self):
         """关闭连接"""
         self.running = False
@@ -579,7 +725,7 @@ class NetworkClient:
         if self.socket:
             try:
                 self.socket.close()
-            except Exception:
+            except:
                 pass
         
         logger.info("🔒 连接已关闭")
