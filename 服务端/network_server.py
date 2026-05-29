@@ -9,6 +9,21 @@ import logging
 import os
 import hashlib
 import base64
+import sys as _sys
+
+# AI Agent 智能体模块
+_ai_agent_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_agent')
+if _ai_agent_dir not in _sys.path:
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from ai_agent.agent_core import AIAgent
+    from ai_agent.smart_reply import SmartReplyEngine
+    from ai_agent.content_analyzer import ContentAnalyzer
+    from ai_agent.auto_responder import AutoResponder
+    AI_AVAILABLE = True
+except ImportError as _ai_e:
+    AI_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"AI Agent 模块不可用: {_ai_e}")
 
 # 导入数据库模块（在同一文件中定义）
 # UserDatabase 类定义在 database.py 中，但为了简化，我们在这里直接引用
@@ -51,6 +66,8 @@ class ClientThread(threading.Thread):
                     self._message_loop()
                 elif msg_type == 'register':
                     self._handle_register(auth_data)
+                elif msg_type == 'get_security_question':
+                    self._handle_get_security_question(auth_data)
                 elif msg_type == 'reset_password':
                     self._handle_reset_password(auth_data)
                 else:
@@ -102,6 +119,24 @@ class ClientThread(threading.Thread):
                     'file_transfer_response': self._handle_file_transfer_response,
                     'file_data': self._handle_file_data,
                     'get_offline_messages': self._handle_get_offline_messages,
+                    # ===== AI 智能体消息类型 =====
+                    'ai_chat': self._handle_ai_chat,
+                    'ai_summarize': self._handle_ai_summarize,
+                    'ai_translate': self._handle_ai_translate,
+                    'ai_polish': self._handle_ai_polish,
+                    'ai_suggest_reply': self._handle_ai_suggest_reply,
+                    'ai_sentiment': self._handle_ai_sentiment,
+                    'ai_clear_history': self._handle_ai_clear_history,
+                    'ai_get_history': self._handle_ai_get_history,
+                    'ai_toggle_auto_reply': self._handle_ai_toggle_auto_reply,
+                    'ai_get_settings': self._handle_ai_get_settings,
+                    'ai_smart_replies': self._handle_ai_smart_replies,
+                    'delete_friend': self._handle_delete_friend,
+                    'search_groups': self._handle_search_groups,
+                    'invite_to_group': self._handle_invite_to_group,
+                    'get_group_chat_history': self._handle_get_group_chat_history,
+                    'dissolve_group': self._handle_dissolve_group,
+                    'kick_group_member': self._handle_kick_group_member,
                 }
                 
                 handler = handlers.get(msg_type)
@@ -261,6 +296,39 @@ class ClientThread(threading.Thread):
         
         self.running = False
     
+    def _handle_get_security_question(self, msg_data):
+        """处理获取安全问题请求"""
+        username = msg_data.get('username', '').strip()
+        
+        logger.info(f"[获取安全问题] 用户名: {username}")
+        
+        if not username:
+            self._send_message({
+                'type': 'security_question_response',
+                'success': False,
+                'message': '用户名不能为空'
+            })
+            return
+        
+        # 从数据库获取用户的安全问题
+        user = self.db.get_user_by_username(username)
+        if not user:
+            self._send_message({
+                'type': 'security_question_response',
+                'success': False,
+                'message': '用户不存在'
+            })
+            return
+        
+        security_question = user.get('security_question', '')
+        
+        self._send_message({
+            'type': 'security_question_response',
+            'success': True,
+            'question': security_question
+        })
+        logger.info(f"[获取安全问题] 用户 {username} 的安全问题已发送")
+    
     def _handle_reset_password(self, msg_data):
         """处理密码重置"""
         username = msg_data.get('username', '').strip()
@@ -333,6 +401,9 @@ class ClientThread(threading.Thread):
             return
         
         timestamp = datetime.now().strftime("%H:%M:%S")
+
+        group_info = self.db.get_group_by_id(group_id)
+        group_name = group_info.get('name', '') if group_info else ''
         
         # 保存消息到数据库
         target_user = self.db.get_user_by_username(target_username)
@@ -370,6 +441,30 @@ class ClientThread(threading.Thread):
             'to': target_username,
             'timestamp': timestamp
         })
+
+        # ===== AI 自动应答 =====
+        auto_responder = getattr(self.server, 'auto_responder', None)
+        if auto_responder and auto_responder.is_enabled_for(target_username):
+            with self.server.lock:
+                target_online = target_username in self.server.clients
+            if not target_online:
+                import threading as _t
+                def _do_auto_reply():
+                    try:
+                        reply = auto_responder.process_message(target_username, self.username, content)
+                        if reply:
+                            # 发送自动应答给发送者
+                            self._send_message({
+                                'type': 'chat',
+                                'from': f'{target_username}(AI自动回复)',
+                                'to': self.username,
+                                'content': reply,
+                                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                                'is_auto_reply': True
+                            })
+                    except Exception as _e:
+                        logger.error(f"自动应答失败: {_e}")
+                _t.Thread(target=_do_auto_reply, daemon=True).start()
     
     def _handle_group_chat(self, msg_data):
         """处理群聊消息"""
@@ -397,6 +492,7 @@ class ClientThread(threading.Thread):
             'from': self.username,
             'group_id': group_id,
             'content': content,
+            'group_name': group_name,
             'timestamp': timestamp
         }
         
@@ -674,6 +770,8 @@ class ClientThread(threading.Thread):
     
     def _handle_update_profile(self, msg_data):
         """处理更新个人资料"""
+        logger.info(f"[更新资料] 收到请求: {msg_data}")
+        
         updates = {}
         
         if 'nickname' in msg_data:
@@ -691,21 +789,27 @@ class ClientThread(threading.Thread):
         if 'avatar' in msg_data:
             updates['avatar'] = msg_data['avatar']
         
+        logger.info(f"[更新资料] 用户ID: {self.user_id}, 更新内容: {updates}")
+        
+        success = False
         if updates and self.user_id:
             success = self.db.update_user(self.user_id, **updates)
-            self._send_message({
-                'type': 'profile_updated',
-                'success': success,
-                'message': '个人资料更新成功' if success else '更新失败'
-            })
-            
-            # 通知用户管理界面刷新
-            if success and hasattr(self.server, 'user_manager_window'):
-                try:
-                    if self.server.user_manager_window and self.server.user_manager_window.isVisible():
-                        self.server.user_manager_window.load_users()
-                except Exception as e:
-                    logger.error(f"刷新用户管理界面失败: {e}")
+            logger.info(f"[更新资料] 更新结果: {success}")
+        
+        # 发送响应
+        self._send_message({
+            'type': 'profile_updated',
+            'success': success,
+            'message': '个人资料更新成功' if success else '更新失败'
+        })
+        
+        # 通知用户管理界面刷新
+        if success and hasattr(self.server, 'user_manager_window'):
+            try:
+                if self.server.user_manager_window and self.server.user_manager_window.isVisible():
+                    self.server.user_manager_window.load_users()
+            except Exception as e:
+                logger.error(f"刷新用户管理界面失败: {e}")
     
     def _handle_file_transfer_request(self, msg_data):
         """处理文件传输请求"""
@@ -775,6 +879,176 @@ class ClientThread(threading.Thread):
             # 删除已发送的离线消息
             self.db.delete_offline_messages(self.user_id)
     
+    # ===== AI 智能体消息处理 =====
+
+    def _handle_ai_chat(self, msg_data):
+        """处理 AI 对话请求"""
+        user_msg = msg_data.get('content', '').strip()
+        if not user_msg:
+            self._send_message({'type': 'ai_chat_response', 'success': False, 'message': '消息不能为空'})
+            return
+
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent or not ai_agent.enabled:
+            self._send_message({'type': 'ai_chat_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            reply = ai_agent.chat(self.username, user_msg)
+            # 保存到数据库
+            self.db.save_ai_message(self.username, 'user', user_msg)
+            self.db.save_ai_message(self.username, 'assistant', reply)
+            self._send_message({
+                'type': 'ai_chat_response',
+                'success': True,
+                'content': reply,
+                'timestamp': datetime.now().strftime('%H:%M:%S')
+            })
+        except Exception as e:
+            logger.error(f"AI 对话处理失败: {e}")
+            self._send_message({'type': 'ai_chat_response', 'success': False, 'message': f'AI 服务异常: {str(e)[:100]}'})
+
+    def _handle_ai_summarize(self, msg_data):
+        """处理 AI 摘要请求"""
+        text = msg_data.get('content', '').strip()
+        if not text:
+            self._send_message({'type': 'ai_summarize_response', 'success': False, 'message': '内容为空'})
+            return
+
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent:
+            self._send_message({'type': 'ai_summarize_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            content_analyzer = ContentAnalyzer(ai_agent)
+            result = content_analyzer.summarize(self.username, text)
+            self._send_message({'type': 'ai_summarize_response', 'success': True, 'content': result})
+        except Exception as e:
+            self._send_message({'type': 'ai_summarize_response', 'success': False, 'message': str(e)[:100]})
+
+    def _handle_ai_translate(self, msg_data):
+        """处理 AI 翻译请求"""
+        text = msg_data.get('content', '').strip()
+        target = msg_data.get('target_lang', '英文')
+        if not text:
+            self._send_message({'type': 'ai_translate_response', 'success': False, 'message': '内容为空'})
+            return
+
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent:
+            self._send_message({'type': 'ai_translate_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            content_analyzer = ContentAnalyzer(ai_agent)
+            result = content_analyzer.translate(self.username, text, target)
+            self._send_message({'type': 'ai_translate_response', 'success': True, 'content': result})
+        except Exception as e:
+            self._send_message({'type': 'ai_translate_response', 'success': False, 'message': str(e)[:100]})
+
+    def _handle_ai_polish(self, msg_data):
+        """处理 AI 润色请求"""
+        text = msg_data.get('content', '').strip()
+        if not text:
+            self._send_message({'type': 'ai_polish_response', 'success': False, 'message': '内容为空'})
+            return
+
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent:
+            self._send_message({'type': 'ai_polish_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            content_analyzer = ContentAnalyzer(ai_agent)
+            result = content_analyzer.polish(self.username, text)
+            self._send_message({'type': 'ai_polish_response', 'success': True, 'content': result})
+        except Exception as e:
+            self._send_message({'type': 'ai_polish_response', 'success': False, 'message': str(e)[:100]})
+
+    def _handle_ai_suggest_reply(self, msg_data):
+        """处理智能回复建议请求"""
+        chat_history = msg_data.get('chat_history', '')
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent:
+            self._send_message({'type': 'ai_suggest_reply_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            smart_reply = SmartReplyEngine(ai_agent)
+            replies = smart_reply.get_smart_replies(self.username, chat_history)
+            self._send_message({'type': 'ai_suggest_reply_response', 'success': True, 'suggestions': replies})
+        except Exception as e:
+            self._send_message({'type': 'ai_suggest_reply_response', 'success': False, 'message': str(e)[:100]})
+
+    def _handle_ai_sentiment(self, msg_data):
+        """处理情感分析请求"""
+        text = msg_data.get('content', '').strip()
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if not ai_agent:
+            self._send_message({'type': 'ai_sentiment_response', 'success': False, 'message': 'AI 服务未启用'})
+            return
+
+        try:
+            content_analyzer = ContentAnalyzer(ai_agent)
+            result = content_analyzer.sentiment(self.username, text)
+            self._send_message({'type': 'ai_sentiment_response', 'success': True, 'content': result})
+        except Exception as e:
+            self._send_message({'type': 'ai_sentiment_response', 'success': False, 'message': str(e)[:100]})
+
+    def _handle_ai_clear_history(self, msg_data=None):
+        """清除 AI 对话历史"""
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        if ai_agent:
+            ai_agent.clear_context(self.username)
+        self.db.clear_ai_history(self.username)
+        self._send_message({'type': 'ai_clear_history_response', 'success': True})
+
+    def _handle_ai_get_history(self, msg_data=None):
+        """获取 AI 对话历史"""
+        history = self.db.get_ai_history(self.username, limit=50)
+        self._send_message({'type': 'ai_history_response', 'success': True, 'history': history})
+
+    def _handle_ai_toggle_auto_reply(self, msg_data):
+        """开关自动应答"""
+        enabled = msg_data.get('enabled', False)
+        auto_responder = getattr(self.server, 'auto_responder', None)
+        if auto_responder:
+            if enabled:
+                auto_responder.enable_for_user(self.username)
+            else:
+                auto_responder.disable_for_user(self.username)
+        self.db.save_ai_settings(self.username, auto_reply=enabled)
+        self._send_message({
+            'type': 'ai_toggle_auto_reply_response',
+            'success': True,
+            'enabled': enabled
+        })
+
+    def _handle_ai_get_settings(self, msg_data=None):
+        """获取 AI 设置"""
+        settings = self.db.get_ai_settings(self.username)
+        ai_agent = getattr(self.server, 'ai_agent', None)
+        ai_enabled = ai_agent.enabled if ai_agent else False
+        self._send_message({
+            'type': 'ai_settings_response',
+            'success': True,
+            'ai_enabled': ai_enabled,
+            'auto_reply_enabled': settings.get('auto_reply_enabled', False),
+            'preferred_lang': settings.get('preferred_lang', '中文')
+        })
+
+    def _handle_ai_smart_replies(self, msg_data):
+        """获取快捷回复建议（基于规则，不调用 LLM）"""
+        message = msg_data.get('message', '')
+        smart_reply = SmartReplyEngine()
+        replies = smart_reply.get_quick_replies(message)
+        self._send_message({
+            'type': 'ai_smart_replies_response',
+            'success': True,
+            'suggestions': replies
+        })
+
     def _handle_user_list_request(self, msg_data=None):
         """处理用户列表请求"""
         all_users = []
@@ -853,7 +1127,7 @@ class ClientThread(threading.Thread):
             try:
                 if self.client_socket and not getattr(self.client_socket, '_closed', False):
                     self.client_socket.close()
-            except Exception:
+            except:
                 pass
                 
         except Exception as e:
@@ -890,10 +1164,60 @@ class IMServer:
         
         # 启动心跳检查线程
         self.heartbeat_check_thread = None
+
+        # ===== AI Agent 智能体 =====
+        self.ai_agent = None
+        self.auto_responder = None
+        if AI_AVAILABLE:
+            try:
+                ai_config = self._load_ai_config()
+                self.ai_agent = AIAgent(config=ai_config)
+                self.auto_responder = AutoResponder(self.ai_agent, cooldown_seconds=60)
+                logger.info("[AI Agent] 智能体初始化成功")
+            except Exception as e:
+                logger.error(f"[AI Agent] 初始化失败: {e}")
     
+    def _load_ai_config(self) -> dict:
+        """加载 AI 配置"""
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_config.json')
+        default_config = {
+            "enabled": True,
+            "provider": "mock",
+            "api_key": "",
+            "base_url": "",
+            "model": "",
+            "max_history": 20,
+            "max_tokens": 2048,
+            "temperature": 0.7,
+            "timeout": 30,
+        }
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    user_config = json.load(f)
+                default_config.update(user_config)
+                logger.info(f"[AI Agent] 已加载配置: {config_path}")
+            else:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, indent=2, ensure_ascii=False)
+                logger.info(f"[AI Agent] 已创建默认配置: {config_path}")
+        except Exception as e:
+            logger.warning(f"[AI Agent] 加载配置失败，使用默认值: {e}")
+        return default_config
+
+    def reload_ai_config(self):
+        """热更新 AI 配置"""
+        if self.ai_agent:
+            config = self._load_ai_config()
+            self.ai_agent.reload_config(config)
+            self.ai_agent.enabled = config.get('enabled', True)
+
     def start(self):
         """启动服务器"""
         try:
+            # 服务器启动时，将所有用户状态重置为离线
+            self._reset_all_users_offline()
+            
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind((self.host, self.port))
@@ -980,7 +1304,7 @@ class IMServer:
         if self.server_socket:
             try:
                 self.server_socket.close()
-            except Exception:
+            except:
                 pass
         
         # 等待服务器线程结束
@@ -994,21 +1318,31 @@ class IMServer:
         if self.log_callback:
             try:
                 self.log_callback(message)
-            except Exception:
+            except:
                 pass
         logger.info(message)
     
-    def set_log_callback(self, callback):
-        """设置日志回调函数"""
-        self.log_callback = callback
-
-    def set_monitor_callback(self, callback):
-        """设置监控回调函数"""
-        self.monitor_callback = callback
+    def log_callback(self, message: str):
+        """设置日志回调"""
+        self.log_callback = lambda msg: None
+    
+    def monitor_callback(self, message: str):
+        """设置监控回调"""
+        self.monitor_callback = lambda msg: None
     
     def client_connected(self, ip: str):
         """客户端连接回调"""
         pass
+    
+    def _reset_all_users_offline(self):
+        """将所有用户状态重置为离线（服务器启动时调用）"""
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("UPDATE users SET status = 'offline'")
+            self.db.conn.commit()
+            logger.info("[服务器启动] 已将所有用户状态重置为离线")
+        except Exception as e:
+            logger.error(f"重置用户状态失败: {e}")
     
     def client_disconnected(self, username: str):
         """客户端断开连接回调"""
