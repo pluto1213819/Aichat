@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -12,39 +12,46 @@ build/
 venv/
 env/
 .venv/
-.env/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Database files
+# Database
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
 
-# Log files
+# Logs
 *.log
 logs/
+
+# Temporary files
+临时文件/
+patch_*.py
+fix_*.py
+validate*.py
+_new_methods.py
+final_*.py
+
+# Credentials (sensitive)
+凭据信息.txt
+
+# Binary assets
+*.webp
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Backups
+backups/
 
 # OS files
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Temporary files
-*.tmp
-*.bak
-*.orig
-
-# Distribution / packaging
-*.tar.gz
-*.whl
-
-# Environment variables
-.env
-.env.local
