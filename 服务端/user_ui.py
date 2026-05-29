@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 class UserManagerWindow(QMainWindow):
     """用户管理窗口"""
     
-    def __init__(self, db):
+    def __init__(self, db, server=None):
         super().__init__()
         self.db = db
+        self.server = server  # 服务器引用，用于获取在线用户列表
         self.init_ui()
         self.load_users()
         
@@ -195,7 +196,14 @@ class UserManagerWindow(QMainWindow):
             users = sorted(users, key=lambda x: x.get('id', 0))
             self.user_table.setRowCount(len(users))
             
-
+            # 获取服务器实际在线用户列表
+            online_usernames = set()
+            if self.server and hasattr(self.server, 'clients'):
+                with self.server.lock:
+                    online_usernames = set(self.server.clients.keys())
+                logger.info(f"[用户管理] 在线用户列表: {online_usernames}")
+            else:
+                logger.info(f"[用户管理] 服务器引用: {self.server}, hasattr(clients): {hasattr(self.server, 'clients') if self.server else 'N/A'}")
             
             for row, user in enumerate(users):
                 # ID
@@ -251,8 +259,23 @@ class UserManagerWindow(QMainWindow):
                 password_item.setForeground(QColor(100, 100, 100))
                 self.user_table.setItem(row, 3, password_item)
                 
-                # 状态
-                status = user.get('status', 'offline')
+                # 状态 - 优先使用服务器实际在线状态
+                username = user.get('username', '')
+                db_status = user.get('status', 'offline')
+                
+                # 如果服务器存在，使用实际在线状态
+                if self.server and hasattr(self.server, 'clients'):
+                    if username in online_usernames:
+                        status = 'online'
+                        logger.info(f"[用户管理] 用户 {username} 实际在线")
+                    else:
+                        status = 'offline'
+                        logger.info(f"[用户管理] 用户 {username} 实际离线")
+                else:
+                    # 没有服务器引用时，使用数据库状态
+                    status = db_status
+                    logger.info(f"[用户管理] 用户 {username} 使用数据库状态: {db_status}")
+                
                 if status not in ['online', 'offline', 'banned']:
                     status = 'offline'
                 
