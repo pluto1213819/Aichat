@@ -91,7 +91,7 @@ class CaptchaGenerator:
         """验证用户答案"""
         try:
             return str(user_answer.strip()) == str(correct_answer)
-        except Exception:
+        except:
             return False
 
 class ModernButton(QPushButton):
@@ -515,7 +515,14 @@ class LoginDialog(QDialog):
     
     def show_forgot_password_dialog(self):
         """显示找回密码对话框"""
-        dialog = ForgotPasswordDialog(self)
+        server_addr = self.server_input.text().strip()
+        port = self.port_input.value()
+        
+        if not server_addr:
+            QMessageBox.warning(self, '警告', '请先填写服务器地址！')
+            return
+        
+        dialog = ForgotPasswordDialog(server_addr, port, self)
         dialog.exec_()
 
 
@@ -530,7 +537,7 @@ class RegisterDialog(QDialog):
         self.captcha_question = ''
         self.captcha_answer = ''
         self.setWindowTitle('用户注册')
-        self.setFixedSize(550, 850)
+        self.setFixedSize(650, 950)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -539,16 +546,16 @@ class RegisterDialog(QDialog):
                 background-color: #F5F5F5;
             }
             QLabel {
-                font-size: 18px;
+                font-size: 20px;
                 color: #333;
                 font-weight: bold;
             }
             QLineEdit {
                 background-color: white;
                 border: 1px solid #D9D9D9;
-                border-radius: 6px;
-                padding: 12px 16px;
-                font-size: 18px;
+                border-radius: 8px;
+                padding: 14px 18px;
+                font-size: 20px;
                 font-weight: bold;
             }
             QLineEdit:focus {
@@ -557,19 +564,19 @@ class RegisterDialog(QDialog):
         """)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(20)
+        layout.setContentsMargins(50, 50, 50, 50)
+        layout.setSpacing(24)
         
         # 标题
         title = QLabel('用户注册')
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1890FF; margin-bottom: 15px;")
+        title.setStyleSheet("font-size: 32px; font-weight: bold; color: #1890FF; margin-bottom: 15px;")
         layout.addWidget(title)
         
         # 服务器信息
         server_info = QLabel(f'服务器: {self.server_addr}:{self.port}')
         server_info.setAlignment(Qt.AlignCenter)
-        server_info.setStyleSheet("font-size: 16px; color: #666; font-weight: bold; margin-bottom: 15px;")
+        server_info.setStyleSheet("font-size: 18px; color: #666; font-weight: bold; margin-bottom: 15px;")
         layout.addWidget(server_info)
         
         # 头像选择区域
@@ -657,6 +664,16 @@ class RegisterDialog(QDialog):
         self.confirm_input.setEchoMode(QLineEdit.Password)
         self.confirm_input.setPlaceholderText('请确认密码')
         form_layout.addRow('确认密码 *:', self.confirm_input)
+        
+        # 安全问题
+        self.security_question_input = QLineEdit()
+        self.security_question_input.setPlaceholderText('例如：我的小学名字是什么？')
+        form_layout.addRow('安全问题:', self.security_question_input)
+        
+        # 安全问题答案
+        self.security_answer_input = QLineEdit()
+        self.security_answer_input.setPlaceholderText('请输入安全问题答案（用于找回密码）')
+        form_layout.addRow('安全问题答案:', self.security_answer_input)
         
         # 验证码
         captcha_layout = QHBoxLayout()
@@ -829,6 +846,10 @@ class RegisterDialog(QDialog):
             self._refresh_captcha()
             return
         
+        # 获取安全问题和答案
+        security_question = self.security_question_input.text().strip()
+        security_answer = self.security_answer_input.text().strip()
+        
         self.status_label.setText('正在连接服务器...')
         self.register_btn.setEnabled(False)
         
@@ -843,7 +864,14 @@ class RegisterDialog(QDialog):
                 return
             
             self.status_label.setText('正在注册...')
-            result = self.client.register(username, password, avatar=self.avatar_path)
+            result = self.client.register(
+                username, 
+                password, 
+                nickname=username,
+                security_question=security_question,
+                security_answer=security_answer,
+                avatar=self.avatar_path
+            )
             
             if result.get('success'):
                 self.status_label.setText('')
@@ -865,12 +893,16 @@ class RegisterDialog(QDialog):
 
 class ForgotPasswordDialog(QDialog):
     """找回密码对话框"""
-    def __init__(self, parent=None):
+    def __init__(self, server_addr, port, parent=None):
         super().__init__(parent)
+        self.server_addr = server_addr
+        self.port = port
+        self.client = None
         self.captcha_question = ''
         self.captcha_answer = ''
+        self.security_question = ''
         self.setWindowTitle('找回密码')
-        self.setFixedSize(550, 500)
+        self.setFixedSize(650, 750)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -879,16 +911,16 @@ class ForgotPasswordDialog(QDialog):
                 background-color: #F5F5F5;
             }
             QLabel {
-                font-size: 18px;
+                font-size: 20px;
                 color: #333;
                 font-weight: bold;
             }
             QLineEdit {
                 background-color: white;
                 border: 1px solid #D9D9D9;
-                border-radius: 6px;
-                padding: 12px 16px;
-                font-size: 18px;
+                border-radius: 8px;
+                padding: 14px 18px;
+                font-size: 20px;
                 font-weight: bold;
             }
             QLineEdit:focus {
@@ -897,27 +929,54 @@ class ForgotPasswordDialog(QDialog):
         """)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(20)
+        layout.setContentsMargins(50, 50, 50, 50)
+        layout.setSpacing(24)
         
         # 标题
         title = QLabel('找回密码')
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #FA8C16; margin-bottom: 25px;")
+        title.setStyleSheet("font-size: 32px; font-weight: bold; color: #FA8C16; margin-bottom: 25px;")
         layout.addWidget(title)
         
         # 说明
-        info = QLabel('请输入您的用户名，我们将帮您找回密码')
+        info = QLabel('请输入您的用户名和安全问题答案来重置密码')
         info.setAlignment(Qt.AlignCenter)
-        info.setStyleSheet("font-size: 16px; color: #666; font-weight: bold;")
+        info.setStyleSheet("font-size: 18px; color: #666; font-weight: bold;")
         info.setWordWrap(True)
         layout.addWidget(info)
         
         # 用户名输入
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText('请输入用户名')
-        layout.addWidget(QLabel('用户名:'))
+        layout.addWidget(QLabel('用户名 *:'))
         layout.addWidget(self.username_input)
+        
+        # 安全问题显示
+        self.security_question_label = QLabel('请先输入用户名并点击"获取安全问题"')
+        self.security_question_label.setStyleSheet("font-size: 18px; color: #666; font-weight: bold; background-color: #F0F0F0; padding: 14px; border-radius: 8px;")
+        self.security_question_label.setWordWrap(True)
+        layout.addWidget(QLabel('安全问题:'))
+        layout.addWidget(self.security_question_label)
+        
+        # 安全问题答案
+        self.security_answer_input = QLineEdit()
+        self.security_answer_input.setPlaceholderText('请输入安全问题答案')
+        layout.addWidget(QLabel('安全问题答案 *:'))
+        layout.addWidget(self.security_answer_input)
+        
+        # 新密码
+        self.new_password_input = QLineEdit()
+        self.new_password_input.setEchoMode(QLineEdit.Password)
+        self.new_password_input.setPlaceholderText('请输入新密码（至少6位）')
+        layout.addWidget(QLabel('新密码 *:'))
+        layout.addWidget(self.new_password_input)
+        
+        # 确认新密码
+        self.confirm_password_input = QLineEdit()
+        self.confirm_password_input.setEchoMode(QLineEdit.Password)
+        self.confirm_password_input.setPlaceholderText('请确认新密码')
+        layout.addWidget(QLabel('确认新密码 *:'))
+        layout.addWidget(self.confirm_password_input)
         
         # 验证码
         layout.addWidget(QLabel('验证码:'))
@@ -932,9 +991,9 @@ class ForgotPasswordDialog(QDialog):
             QLabel {
                 background-color: #F0F0F0;
                 border: 1px solid #D9D9D9;
-                border-radius: 6px;
-                padding: 12px 16px;
-                font-size: 20px;
+                border-radius: 8px;
+                padding: 14px 18px;
+                font-size: 22px;
                 font-weight: bold;
                 color: #1890FF;
             }
@@ -942,14 +1001,14 @@ class ForgotPasswordDialog(QDialog):
         captcha_layout.addWidget(self.captcha_label)
         
         refresh_btn = QPushButton('🔄')
-        refresh_btn.setFixedSize(45, 45)
+        refresh_btn.setFixedSize(50, 50)
         refresh_btn.setToolTip('刷新验证码')
         refresh_btn.setStyleSheet("""
             QPushButton {
                 background-color: white;
                 border: 1px solid #D9D9D9;
-                border-radius: 6px;
-                font-size: 20px;
+                border-radius: 8px;
+                font-size: 22px;
             }
             QPushButton:hover {
                 background-color: #F5F5F5;
@@ -963,14 +1022,25 @@ class ForgotPasswordDialog(QDialog):
         # 初始化验证码
         self._refresh_captcha()
         
+        # 状态标签
+        self.status_label = QLabel('')
+        self.status_label.setStyleSheet("color: #666; font-size: 18px; font-weight: bold;")
+        layout.addWidget(self.status_label)
+        
         # 按钮
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(20)
-        submit_btn = ModernButton('提 交', 'warning')
+        
+        get_question_btn = ModernButton('获取安全问题', 'primary')
+        get_question_btn.clicked.connect(self.do_get_question)
+        
+        submit_btn = ModernButton('重置密码', 'warning')
         submit_btn.clicked.connect(self.do_submit)
+        
         cancel_btn = ModernButton('取 消', 'default')
         cancel_btn.clicked.connect(self.reject)
         
+        btn_layout.addWidget(get_question_btn)
         btn_layout.addWidget(submit_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
@@ -983,17 +1053,108 @@ class ForgotPasswordDialog(QDialog):
         self.captcha_label.setText(self.captcha_question)
         self.captcha_input.clear()
     
-    def do_submit(self):
-        """提交找回密码请求"""
+    def do_get_question(self):
+        """获取用户的安全问题"""
         username = self.username_input.text().strip()
-        captcha = self.captcha_input.text().strip()
         
         if not username:
             QMessageBox.warning(self, '警告', '请输入用户名！')
             return
         
-        if not captcha:
-            QMessageBox.warning(self, '警告', '请输入验证码！')
+        self.status_label.setText('正在连接服务器...')
+        
+        try:
+            from client_network import NetworkClient
+            self.client = NetworkClient(self.server_addr, self.port)
+            
+            if not self.client.connect():
+                self.status_label.setText('')
+                QMessageBox.warning(self, '连接失败', f'无法连接到服务器 {self.server_addr}:{self.port}')
+                return
+            
+            # 发送获取安全问题请求
+            msg = {
+                'type': 'get_security_question',
+                'username': username
+            }
+            
+            if not self.client.send_message(msg):
+                self.status_label.setText('')
+                QMessageBox.warning(self, '错误', '发送请求失败')
+                self.client.close()
+                return
+            
+            # 接收响应
+            self.client.socket.settimeout(10)
+            try:
+                import struct
+                raw_len = self.client.socket.recv(4)
+                if not raw_len or len(raw_len) < 4:
+                    self.status_label.setText('')
+                    QMessageBox.warning(self, '错误', '接收数据失败')
+                    self.client.close()
+                    return
+                
+                msg_len = struct.unpack('!I', raw_len)[0]
+                json_data = b''
+                while len(json_data) < msg_len:
+                    chunk = self.client.socket.recv(msg_len - len(json_data))
+                    if not chunk:
+                        break
+                    json_data += chunk
+                
+                import json
+                response = json.loads(json_data.decode('utf-8'))
+                
+                if response.get('type') == 'security_question_response':
+                    if response.get('success'):
+                        self.security_question = response.get('question', '')
+                        if self.security_question:
+                            self.security_question_label.setText(self.security_question)
+                            self.security_question_label.setStyleSheet("font-size: 16px; color: #333; font-weight: bold; background-color: #E6F7FF; padding: 12px; border-radius: 6px;")
+                            self.status_label.setText('已获取安全问题，请输入答案和新密码')
+                        else:
+                            self.status_label.setText('')
+                            QMessageBox.information(self, '提示', '该用户未设置安全问题，无法找回密码')
+                    else:
+                        self.status_label.setText('')
+                        QMessageBox.warning(self, '错误', response.get('message', '用户不存在'))
+                else:
+                    self.status_label.setText('')
+                    QMessageBox.warning(self, '错误', '收到非预期响应')
+                    
+            except socket.timeout:
+                self.status_label.setText('')
+                QMessageBox.warning(self, '超时', '服务器响应超时')
+            except Exception as e:
+                self.status_label.setText('')
+                QMessageBox.critical(self, '错误', f'获取安全问题失败: {str(e)}')
+            finally:
+                self.client.socket.settimeout(None)
+                self.client.close()
+                
+        except Exception as e:
+            self.status_label.setText('')
+            QMessageBox.critical(self, '错误', f'连接服务器失败: {str(e)}')
+    
+    def do_submit(self):
+        """提交找回密码请求"""
+        username = self.username_input.text().strip()
+        security_answer = self.security_answer_input.text().strip()
+        new_password = self.new_password_input.text()
+        confirm_password = self.confirm_password_input.text()
+        captcha = self.captcha_input.text().strip()
+        
+        if not all([username, security_answer, new_password, confirm_password, captcha]):
+            QMessageBox.warning(self, '警告', '请填写所有必填项！')
+            return
+        
+        if len(new_password) < 6:
+            QMessageBox.warning(self, '警告', '新密码长度至少6位！')
+            return
+        
+        if new_password != confirm_password:
+            QMessageBox.warning(self, '警告', '两次输入的密码不一致！')
             return
         
         # 验证码验证
@@ -1002,8 +1163,33 @@ class ForgotPasswordDialog(QDialog):
             self._refresh_captcha()
             return
         
-        QMessageBox.information(self, '提示', '找回密码功能需要连接到服务端实现')
-        self.accept()
+        self.status_label.setText('正在重置密码...')
+        
+        try:
+            from client_network import NetworkClient
+            self.client = NetworkClient(self.server_addr, self.port)
+            
+            if not self.client.connect():
+                self.status_label.setText('')
+                QMessageBox.warning(self, '连接失败', f'无法连接到服务器 {self.server_addr}:{self.port}')
+                return
+            
+            result = self.client.reset_password(username, security_answer, new_password)
+            
+            if result.get('success'):
+                self.status_label.setText('')
+                QMessageBox.information(self, '成功', '密码重置成功！请使用新密码登录。')
+                self.client.close()
+                self.accept()
+            else:
+                error_msg = result.get('message', '密码重置失败')
+                self.status_label.setText('')
+                QMessageBox.warning(self, '失败', error_msg)
+                self.client.close()
+                
+        except Exception as e:
+            self.status_label.setText('')
+            QMessageBox.critical(self, '错误', f'密码重置过程中发生错误: {str(e)}')
 
 
 # 保持原有的 ChatMainWindow 和其他类的代码...
@@ -1233,6 +1419,9 @@ class ChatMainWindow(QMainWindow):
         self.pending_files = {}  # 保存待下载的文件 {file_id: {'from': username, 'name': filename, 'data': data}}
         self.file_counter = 0  # 文件计数器
         self.chat_windows = {}  # 保存打开的聊天窗口
+        self.groups_data = []
+        self.current_group = None
+        self.chat_mode = 'friend'
         self.setWindowTitle(f'Nova chatting - {username}')
         self.setGeometry(100, 100, 1300, 1000)
         self._setup_ui()
@@ -1302,8 +1491,104 @@ class ChatMainWindow(QMainWindow):
                         content = om.get('content', '')
                         self.chat_history.append(f'<div style="margin: 8px 0; padding: 10px 15px; background-color: #E6F7FF; border-radius: 8px;"><b style="color: #1890FF;">[离线消息] {sender}:</b> {content}</div>')
             
+            elif msg_type == 'ai_chat_response':
+                messages_to_remove.append(i)
+                if msg.get('success'):
+                    ai_content = msg.get('content', '')
+                    timestamp = msg.get('timestamp', '')
+                    self.chat_history.append(
+                        f'<table border="0" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 16px;">'
+                        f'<tr><td width="100%" align="left"><table border="0" cellpadding="0" cellspacing="0">'
+                        f'<tr><td valign="middle">'
+                        f'<div style="width: 50px; height: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; text-align: center; line-height: 50px; font-size: 22px; color: white; display: inline-block;">🤖</div>'
+                        f'</td><td width="12"></td><td valign="middle">'
+                        f'<div style="background-color: #F0F0FF; border: 1px solid #D0D0FF; border-radius: 25px; padding: 16px 30px; display: inline-block; min-width: 80px;">'
+                        f'<span style="color: #333; font-size: 16px;">{ai_content}</span>'
+                        f'</div></td></tr></table></td></tr></table>'
+                    )
+                else:
+                    err = msg.get('message', '未知错误')
+                    self.chat_history.append(
+                        f'<div style="margin: 8px 0; padding: 10px 15px; background-color: #FFF1F0; border-radius: 8px;">'
+                        f'<b style="color: #FF4D4F;">[AI 错误]</b> {err}</div>'
+                    )
+
+            elif msg_type and msg_type.startswith('ai_') and msg_type.endswith('_response'):
+                messages_to_remove.append(i)
+                # 转发给 AI 助手对话框（如果打开的话）
+                if hasattr(self, '_ai_dialog') and self._ai_dialog:
+                    self._ai_dialog.handle_ai_response(msg_type, msg)
+
+            elif msg_type == 'group_chat':
+                messages_to_remove.append(i)
+                from_user = msg.get('from', '')
+                gc = msg.get('content', '')
+                gid = msg.get('group_id')
+                if self.chat_mode == 'group' and self.current_group and self.current_group.get('id') == gid:
+                    self.chat_history.append(f'<div style="text-align: left; margin: 8px 0;"><span style="color: #999; font-size: 12px;">{from_user}</span><br><span style="background: #F0F0F0; padding: 10px 18px; border-radius: 18px; display: inline-block; font-size: 16px;">{gc}</span></div>')
+
+            elif msg_type == 'friend_request_received':
+                messages_to_remove.append(i)
+                from_user = msg.get('from_username', '')
+                QMessageBox.information(self, '\u597d\u53cb\u7533\u8bf7', f'{from_user} \u8bf7\u6c42\u6dfb\u52a0\u4f60\u4e3a\u597d\u53cb')
+
+            elif msg_type == 'friend_deleted':
+                messages_to_remove.append(i)
+                QMessageBox.information(self, '\u597d\u53cb\u53d8\u52a8', msg.get('message', '\u597d\u53cb\u5173\u7cfb\u5df2\u53d8\u66f4'))
+                self._load_friends()
+
+            elif msg_type == 'group_invite_notification':
+                messages_to_remove.append(i)
+                gname = msg.get('group_name', '')
+                inviter = msg.get('inviter', '')
+                gid = msg.get('group_id')
+                reply = QMessageBox.question(self, '\u7fa4\u7ec4\u9080\u8bf7',
+                    f'{inviter} \u9080\u8bf7\u4f60\u52a0\u5165\u7fa4\u7ec4\u300c{gname}\u300d\n\u662f\u5426\u63a5\u53d7\uff1f',
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                if reply == QMessageBox.Yes:
+                    self.client.join_group(gid)
+                self._load_groups()
+
+            elif msg_type == 'group_dissolved':
+                messages_to_remove.append(i)
+                QMessageBox.information(self, '\u7fa4\u7ec4\u89e3\u6563', msg.get('message', '\u7fa4\u7ec4\u5df2\u88ab\u89e3\u6563'))
+                self._load_groups()
+                if self.chat_mode == 'group':
+                    self.chat_mode = 'friend'
+                    self.current_group = None
+
+            elif msg_type == 'kicked_from_group':
+                messages_to_remove.append(i)
+                QMessageBox.information(self, '\u79fb\u51fa\u7fa4\u7ec4', msg.get('message', '\u4f60\u5df2\u88ab\u79fb\u51fa\u7fa4\u7ec4'))
+                self._load_groups()
+                if self.chat_mode == 'group':
+                    self.chat_mode = 'friend'
+                    self.current_group = None
+
+            elif msg_type == 'group_chat_history':
+                messages_to_remove.append(i)
+                if msg.get('success'):
+                    for m in msg.get('messages', []):
+                        sender = m.get('sender_username', '')
+                        text = m.get('content', '')
+                        if sender == self.username:
+                            self.chat_history.append(f'<div style="text-align: right; margin: 4px 0;"><span style="background: #95EC69; padding: 8px 16px; border-radius: 15px; display: inline-block;">{text}</span></div>')
+                        else:
+                            self.chat_history.append(f'<div style="text-align: left; margin: 4px 0;"><span style="color: #999; font-size: 12px;">{sender}</span><br><span style="background: #F0F0F0; padding: 8px 16px; border-radius: 15px; display: inline-block;">{text}</span></div>')
+
+            elif msg_type == 'chat_history':
+                messages_to_remove.append(i)
+                if msg.get('success'):
+                    for m in msg.get('messages', []):
+                        sender = m.get('sender_username', '')
+                        text = m.get('content', '')
+                        if sender == self.username:
+                            self.chat_history.append(f'<div style="text-align: right; margin: 4px 0;"><span style="background: #95EC69; padding: 8px 16px; border-radius: 15px; display: inline-block;">{text}</span></div>')
+                        else:
+                            self.chat_history.append(f'<div style="text-align: left; margin: 4px 0;"><span style="color: #999; font-size: 12px;">{sender}</span><br><span style="background: #F0F0F0; padding: 8px 16px; border-radius: 15px; display: inline-block;">{text}</span></div>')
+
+
             elif msg_type == 'friend_request_accepted':
-                # 直接删除消息，避免索引越界
                 del self.client.message_queue[i]
                 self._load_friends()
                 # 跳过后续的删除操作，因为我们已经删除了这个消息
@@ -1408,6 +1693,227 @@ class ChatMainWindow(QMainWindow):
                     continue
                 break
     
+
+    def _load_groups(self):
+        if self.client and self.client.authenticated:
+            self.client.get_groups()
+            import time
+            for _ in range(10):
+                for i, msg in enumerate(list(self.client.message_queue)):
+                    if msg.get('type') == 'groups_list':
+                        try:
+                            del self.client.message_queue[i]
+                        except IndexError:
+                            pass
+                        groups = msg.get('groups', [])
+                        self.groups_data = groups
+                        self.groups_list.clear()
+                        for g in groups:
+                            name = g.get('name', '')
+                            count = g.get('member_count', 0)
+                            item_text = "  \u0001f465 " + name + " (" + str(count) + "\u4eba)"
+                            item = QListWidgetItem(item_text)
+                            item.setData(Qt.UserRole, g)
+                            item.setForeground(QColor('#333'))
+                            self.groups_list.addItem(item)
+                        break
+                else:
+                    time.sleep(0.2)
+                    continue
+                break
+
+    def _on_group_selected(self, item):
+        group_data = item.data(Qt.UserRole)
+        if not group_data:
+            return
+        self.current_group = group_data
+        self.current_chat_friend = None
+        self.chat_mode = 'group'
+        group_name = group_data.get('name', '')
+        group_id = group_data.get('id', '')
+        self.chat_title.setText('\u7fa4\u804a: ' + group_name)
+        self.chat_history.clear()
+        self.chat_history.append('<div style="color: #999; text-align: center;">\u6b22\u8fce\u6765\u5230\u7fa4\u804a\u300c' + group_name + '\u300d</div>')
+        self.client.get_group_chat_history(group_id)
+
+    def show_create_group_dialog(self):
+        from PyQt5.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, '\u521b\u5efa\u7fa4\u7ec4', '\u7fa4\u7ec4\u540d\u79f0:')
+        if ok and name.strip():
+            desc, ok2 = QInputDialog.getText(self, '\u7fa4\u7ec4\u63cf\u8ff0', '\u7fa4\u7ec4\u63cf\u8ff0(\u53ef\u9009):')
+            if ok2:
+                self.client.create_group(name.strip(), desc.strip() if desc else '')
+                import time
+                for _ in range(15):
+                    for i, msg in enumerate(self.client.message_queue):
+                        if msg.get('type') == 'create_group_response':
+                            del self.client.message_queue[i]
+                            if msg.get('success'):
+                                QMessageBox.information(self, '\u6210\u529f', msg.get('message', '\u7fa4\u7ec4\u521b\u5efa\u6210\u529f'))
+                                self._load_groups()
+                            else:
+                                QMessageBox.warning(self, '\u5931\u8d25', msg.get('error', '\u521b\u5efa\u5931\u8d25'))
+                            return
+                    time.sleep(0.2)
+
+    def show_search_group_dialog(self):
+        from PyQt5.QtWidgets import QInputDialog
+        keyword, ok = QInputDialog.getText(self, '\u641c\u7d22\u7fa4\u7ec4', '\u8bf7\u8f93\u5165\u7fa4\u7ec4\u540d\u79f0\u5173\u952e\u8bcd:')
+        if ok and keyword.strip():
+            self.client.search_groups(keyword.strip())
+            import time
+            groups = []
+            for _ in range(15):
+                for i, msg in enumerate(self.client.message_queue):
+                    if msg.get('type') == 'search_groups_result':
+                        del self.client.message_queue[i]
+                        groups = msg.get('groups', [])
+                        break
+                else:
+                    time.sleep(0.1)
+                    continue
+                break
+            if not groups:
+                QMessageBox.information(self, '\u641c\u7d22\u7ed3\u679c', '\u672a\u627e\u5230\u76f8\u5173\u7fa4\u7ec4')
+                return
+            dlg = QDialog(self)
+            dlg.setWindowTitle('\u641c\u7d22\u7ed3\u679c')
+            dlg.setFixedSize(500, 400)
+            dlg_layout = QVBoxLayout(dlg)
+            dlg_layout.addWidget(QLabel('\u627e\u5230 ' + str(len(groups)) + ' \u4e2a\u7fa4\u7ec4:'))
+            result_list = QListWidget()
+            for g in groups:
+                item_text = "[ID:" + str(g['id']) + "] " + g['name'] + " (" + str(g.get('member_count', 0)) + "\u4eba)"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, g)
+                result_list.addItem(item)
+            dlg_layout.addWidget(result_list)
+            def join_sel():
+                sel = result_list.currentItem()
+                if sel:
+                    g = sel.data(Qt.UserRole)
+                    self.client.join_group(g['id'])
+                    for _ in range(10):
+                        for j, m in enumerate(self.client.message_queue):
+                            if m.get('type') == 'join_group_response':
+                                del self.client.message_queue[j]
+                                if m.get('success'):
+                                    QMessageBox.information(dlg, '\u6210\u529f', '\u5df2\u52a0\u5165\u7fa4\u7ec4')
+                                    self._load_groups()
+                                    dlg.accept()
+                                else:
+                                    QMessageBox.warning(dlg, '\u5931\u8d25', m.get('error', ''))
+                                return
+                        time.sleep(0.2)
+            btn = QPushButton('\u52a0\u5165\u9009\u4e2d\u7fa4\u7ec4')
+            btn.clicked.connect(join_sel)
+            dlg_layout.addWidget(btn)
+            dlg.exec_()
+
+    def _show_friend_context_menu(self, pos):
+        item = self.friends_list.itemAt(pos)
+        if not item:
+            return
+        friend_text = item.text().strip()
+        parts = friend_text.split()
+        friend_name = parts[-1] if len(parts) >= 2 else friend_text
+        from PyQt5.QtWidgets import QMenu
+        menu = QMenu(self)
+        chat_a = menu.addAction('\u53d1\u9001\u6d88\u606f')
+        menu.addSeparator()
+        del_a = menu.addAction('\u5220\u9664\u597d\u53cb')
+        action = menu.exec_(self.friends_list.mapToGlobal(pos))
+        if action == chat_a:
+            self._on_friend_selected(item)
+        elif action == del_a:
+            reply = QMessageBox.question(self, '\u786e\u8ba4', '\u786e\u5b9a\u5220\u9664\u597d\u53cb ' + friend_name + ' \u5417\uff1f',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.client.delete_friend(friend_name)
+                import time
+                for _ in range(10):
+                    for i, msg in enumerate(self.client.message_queue):
+                        if msg.get('type') == 'delete_friend_response':
+                            del self.client.message_queue[i]
+                            if msg.get('success'):
+                                QMessageBox.information(self, '\u6210\u529f', '\u5df2\u5220\u9664')
+                                self._load_friends()
+                            return
+                    time.sleep(0.2)
+
+    def _show_group_context_menu(self, pos):
+        item = self.groups_list.itemAt(pos)
+        if not item:
+            return
+        group_data = item.data(Qt.UserRole)
+        if not group_data:
+            return
+        from PyQt5.QtWidgets import QMenu
+        menu = QMenu(self)
+        chat_a = menu.addAction('\u8fdb\u5165\u7fa4\u804a')
+        members_a = menu.addAction('\u67e5\u770b\u6210\u5458')
+        invite_a = menu.addAction('\u9080\u8bf7\u597d\u53cb')
+        menu.addSeparator()
+        leave_a = menu.addAction('\u9000\u51fa\u7fa4\u7ec4')
+        action = menu.exec_(self.groups_list.mapToGlobal(pos))
+        if action == chat_a:
+            self._on_group_selected(item)
+        elif action == members_a:
+            self._show_group_members(group_data)
+        elif action == invite_a:
+            self._invite_to_group_dialog(group_data)
+        elif action == leave_a:
+            reply = QMessageBox.question(self, '\u786e\u8ba4', '\u786e\u5b9a\u9000\u51fa\u7fa4\u7ec4\u300c' + group_data.get('name', '') + '\u300d\u5417\uff1f',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.client.leave_group(group_data['id'])
+                self._load_groups()
+
+    def _show_group_members(self, group_data):
+        group_id = group_data.get('id')
+        self.client.get_group_members(group_id)
+        import time
+        members = []
+        for _ in range(15):
+            for i, msg in enumerate(self.client.message_queue):
+                if msg.get('type') == 'group_members_list' and msg.get('group_id') == group_id:
+                    del self.client.message_queue[i]
+                    members = msg.get('members', [])
+                    break
+            else:
+                time.sleep(0.1)
+                continue
+            break
+        dlg = QDialog(self)
+        dlg.setWindowTitle('\u7fa4\u6210\u5458 - ' + group_data.get('name', ''))
+        dlg.setFixedSize(400, 500)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel('\u5171 ' + str(len(members)) + ' \u540d\u6210\u5458:'))
+        ml = QListWidget()
+        for m in members:
+            status = '\u2705' if m.get('is_online') else '\u26ab'
+            role = '\u7fa4\u4e3b' if m.get('role') == 'admin' else '\u6210\u5458'
+            ml.addItem(status + ' ' + m['username'] + ' (' + role + ')')
+        layout.addWidget(ml)
+        dlg.exec_()
+
+    def _invite_to_group_dialog(self, group_data):
+        from PyQt5.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, '\u9080\u8bf7', '\u8bf7\u8f93\u5165\u597d\u53cb\u7528\u6237\u540d:')
+        if ok and name.strip():
+            self.client.invite_to_group(group_data['id'], name.strip())
+            import time
+            for _ in range(10):
+                for i, msg in enumerate(self.client.message_queue):
+                    if msg.get('type') == 'invite_to_group_response':
+                        del self.client.message_queue[i]
+                        if msg.get('success'):
+                            QMessageBox.information(self, '\u6210\u529f', msg.get('message', '\u9080\u8bf7\u5df2\u53d1\u9001'))
+                        else:
+                            QMessageBox.warning(self, '\u5931\u8d25', msg.get('error', ''))
+                        return
+                time.sleep(0.2)
+
     def _load_user_avatar(self, size=80):
         """加载用户头像"""
         try:
@@ -1531,24 +2037,24 @@ class ChatMainWindow(QMainWindow):
         user_header_layout.setContentsMargins(20, 30, 20, 30)
         
         # 显示用户头像
-        user_avatar_label = QLabel()
-        user_avatar_label.setFixedSize(120, 120)
-        user_avatar_label.setAlignment(Qt.AlignCenter)
+        self.user_avatar_label = QLabel()
+        self.user_avatar_label.setFixedSize(120, 120)
+        self.user_avatar_label.setAlignment(Qt.AlignCenter)
         
         # 加载头像
         avatar_pixmap = self._load_user_avatar(120)
         if avatar_pixmap:
-            user_avatar_label.setPixmap(avatar_pixmap)
+            self.user_avatar_label.setPixmap(avatar_pixmap)
         else:
-            user_avatar_label.setText("👤")
-            user_avatar_label.setStyleSheet("font-size: 72px;")
+            self.user_avatar_label.setText("👤")
+            self.user_avatar_label.setStyleSheet("font-size: 72px;")
         
-        user_header_layout.addWidget(user_avatar_label, 0, Qt.AlignCenter)
+        user_header_layout.addWidget(self.user_avatar_label, 0, Qt.AlignCenter)
         
-        user_name = QLabel(self.username)
-        user_name.setStyleSheet("color: #333; font-size: 22px; font-weight: bold;")
-        user_name.setAlignment(Qt.AlignCenter)
-        user_header_layout.addWidget(user_name, 0, Qt.AlignCenter)
+        self.user_name_label = QLabel(self.username)
+        self.user_name_label.setStyleSheet("color: #333; font-size: 22px; font-weight: bold;")
+        self.user_name_label.setAlignment(Qt.AlignCenter)
+        user_header_layout.addWidget(self.user_name_label, 0, Qt.AlignCenter)
         
         left_layout.addWidget(user_header)
         
@@ -1611,62 +2117,94 @@ class ChatMainWindow(QMainWindow):
         """)
         profile_btn.clicked.connect(self.show_profile_dialog)
         btn_layout.addWidget(profile_btn)
-        
-        left_layout.addWidget(btn_widget)
-        
-        # 好友列表标题栏
-        friends_header = QWidget()
-        friends_header.setStyleSheet("background-color: #F8F9FA; padding: 10px;")
-        friends_header_layout = QHBoxLayout(friends_header)
-        friends_header_layout.setContentsMargins(15, 5, 15, 5)
-        
-        friends_title = QLabel('好友列表')
-        friends_title.setStyleSheet("color: #666; font-size: 14px; font-weight: bold;")
-        friends_header_layout.addWidget(friends_title)
-        
-        refresh_btn = QPushButton('🔄')
-        refresh_btn.setFixedSize(32, 32)
-        refresh_btn.setStyleSheet("""
+
+        # ===== AI 智能助手按钮 =====
+        ai_btn = QPushButton('🤖 AI 智能助手')
+        ai_btn.setStyleSheet("""
             QPushButton {
-                background-color: #E4E6EB;
+                background-color: #EEEEF0;
                 color: #333;
                 border: none;
-                border-radius: 16px;
-                font-size: 14px;
+                border-radius: 10px;
+                padding: 16px;
+                font-size: 16px;
+                text-align: left;
             }
             QPushButton:hover {
-                background-color: #DADDE1;
+                background-color: #E4E6EB;
             }
         """)
+        ai_btn.clicked.connect(self.show_ai_assistant)
+        btn_layout.addWidget(ai_btn)
+
+        left_layout.addWidget(btn_widget)
+        
+        # ===== Friends/Groups Tabs =====
+        from PyQt5.QtWidgets import QTabWidget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("QTabWidget::pane { border: none; } QTabBar::tab { background: #F0F0F0; color: #666; padding: 10px 16px; font-size: 14px; font-weight: bold; border: none; min-width: 100px; } QTabBar::tab:selected { background: white; color: #1890FF; border-bottom: 3px solid #1890FF; } QTabBar::tab:hover { background: #E6F7FF; }")
+        
+        friends_tab = QWidget()
+        ft_layout = QVBoxLayout(friends_tab)
+        ft_layout.setContentsMargins(0, 0, 0, 0)
+        ft_layout.setSpacing(0)
+        friends_header = QWidget()
+        friends_header.setStyleSheet("background-color: #F8F9FA; padding: 8px;")
+        fh_layout = QHBoxLayout(friends_header)
+        fh_layout.setContentsMargins(12, 4, 12, 4)
+        fh_layout.addWidget(QLabel('\u597d\u53cb\u5217\u8868'))
+        fh_layout.addStretch()
+        refresh_btn = QPushButton('\U0001f504')
+        refresh_btn.setFixedSize(28, 28)
+        refresh_btn.setStyleSheet("QPushButton { background: #E4E6EB; border: none; border-radius: 14px; } QPushButton:hover { background: #DADDE1; }")
         refresh_btn.clicked.connect(self._load_friends)
-        refresh_btn.setToolTip('刷新好友列表')
-        friends_header_layout.addWidget(refresh_btn)
-        
-        left_layout.addWidget(friends_header)
-        
-        # 好友列表
+        fh_layout.addWidget(refresh_btn)
+        ft_layout.addWidget(friends_header)
         self.friends_list = QListWidget()
-        self.friends_list.setStyleSheet("""
-            QListWidget {
-                background-color: white;
-                border: none;
-                color: #333;
-            }
-            QListWidget::item {
-                padding: 15px;
-                border-bottom: 1px solid #F0F0F0;
-                color: #333;
-            }
-            QListWidget::item:selected {
-                background-color: #E6F7FF;
-                color: #1890FF;
-            }
-            QListWidget::item:hover {
-                background-color: #F8F9FA;
-            }
-        """)
+        self.friends_list.setStyleSheet("QListWidget { background: white; border: none; } QListWidget::item { padding: 14px; border-bottom: 1px solid #F0F0F0; } QListWidget::item:selected { background: #E6F7FF; } QListWidget::item:hover { background: #F8F9FA; }")
         self.friends_list.itemDoubleClicked.connect(self._on_friend_selected)
-        left_layout.addWidget(self.friends_list)
+        self.friends_list.setContextMenuPolicy(3)
+        self.friends_list.customContextMenuRequested.connect(self._show_friend_context_menu)
+        ft_layout.addWidget(self.friends_list)
+        self.tab_widget.addTab(friends_tab, '\U0001f465 \u597d\u53cb')
+        
+        groups_tab = QWidget()
+        gt_layout = QVBoxLayout(groups_tab)
+        gt_layout.setContentsMargins(0, 0, 0, 0)
+        gt_layout.setSpacing(0)
+        groups_header = QWidget()
+        groups_header.setStyleSheet("background-color: #F8F9FA; padding: 8px;")
+        gh_layout = QHBoxLayout(groups_header)
+        gh_layout.setContentsMargins(12, 4, 12, 4)
+        gh_layout.addWidget(QLabel('\u6211\u7684\u7fa4\u7ec4'))
+        gh_layout.addStretch()
+        create_btn = QPushButton('\u2795')
+        create_btn.setFixedSize(28, 28)
+        create_btn.setStyleSheet("QPushButton { background: #52C41A; color: white; border: none; border-radius: 14px; font-weight: bold; } QPushButton:hover { background: #73D13D; }")
+        create_btn.setToolTip('\u521b\u5efa\u7fa4\u7ec4')
+        create_btn.clicked.connect(self.show_create_group_dialog)
+        gh_layout.addWidget(create_btn)
+        search_btn = QPushButton('\U0001f50d')
+        search_btn.setFixedSize(28, 28)
+        search_btn.setStyleSheet("QPushButton { background: #1890FF; color: white; border: none; border-radius: 14px; } QPushButton:hover { background: #40A9FF; }")
+        search_btn.setToolTip('\u641c\u7d22\u7fa4\u7ec4')
+        search_btn.clicked.connect(self.show_search_group_dialog)
+        gh_layout.addWidget(search_btn)
+        rg_btn = QPushButton('\U0001f504')
+        rg_btn.setFixedSize(28, 28)
+        rg_btn.setStyleSheet("QPushButton { background: #E4E6EB; border: none; border-radius: 14px; } QPushButton:hover { background: #DADDE1; }")
+        rg_btn.clicked.connect(self._load_groups)
+        gh_layout.addWidget(rg_btn)
+        gt_layout.addWidget(groups_header)
+        self.groups_list = QListWidget()
+        self.groups_list.setStyleSheet("QListWidget { background: white; border: none; } QListWidget::item { padding: 14px; border-bottom: 1px solid #F0F0F0; } QListWidget::item:selected { background: #E6F7FF; } QListWidget::item:hover { background: #F8F9FA; }")
+        self.groups_list.itemDoubleClicked.connect(self._on_group_selected)
+        self.groups_list.setContextMenuPolicy(3)
+        self.groups_list.customContextMenuRequested.connect(self._show_group_context_menu)
+        gt_layout.addWidget(self.groups_list)
+        self.tab_widget.addTab(groups_tab, '\U0001f4ac \u7fa4\u7ec4')
+        
+        left_layout.addWidget(self.tab_widget)
         layout.addWidget(left_panel)
         
         # 右侧聊天区域
@@ -1786,6 +2324,14 @@ class ChatMainWindow(QMainWindow):
         self.chat_history.clear()
         self.chat_history.append(f'<div style="color: #999; text-align: center;">开始与 {self.current_chat_friend} 的对话</div>')
     
+    def show_ai_assistant(self):
+        """显示 AI 智能助手对话框"""
+        if not hasattr(self, '_ai_dialog') or not self._ai_dialog:
+            self._ai_dialog = AIAssistantDialog(self.client, self.username, self)
+        self._ai_dialog.show()
+        self._ai_dialog.raise_()
+        self._ai_dialog.activateWindow()
+
     def closeEvent(self, event):
         """窗口关闭事件 - 发送注销命令"""
         if self.client and self.client.authenticated:
@@ -1980,6 +2526,36 @@ class ChatMainWindow(QMainWindow):
         """显示个人资料对话框"""
         dialog = ProfileDialog(self.username, self.client, self)
         dialog.exec_()
+    
+    def refresh_user_display(self):
+        """刷新用户信息显示（头像和昵称）"""
+        # 更新窗口标题
+        new_nickname = getattr(self.client, 'nickname', self.username)
+        self.setWindowTitle(f'Nova chatting - {new_nickname}')
+        
+        # 更新用户头像
+        self.user_avatar = getattr(self.client, 'avatar', None)
+        
+        # 更新左上角头像显示
+        if hasattr(self, 'user_avatar_label'):
+            avatar_pixmap = self._load_user_avatar(120)
+            if avatar_pixmap:
+                # 先清除旧内容，再设置新头像
+                self.user_avatar_label.clear()
+                self.user_avatar_label.setPixmap(avatar_pixmap)
+            else:
+                # 清除旧头像，显示默认图标
+                self.user_avatar_label.clear()
+                self.user_avatar_label.setText("👤")
+                self.user_avatar_label.setStyleSheet("font-size: 72px;")
+        
+        # 更新左上角用户名显示
+        if hasattr(self, 'user_name_label'):
+            display_name = new_nickname if new_nickname else self.username
+            self.user_name_label.setText(display_name)
+        
+        # 刷新好友列表以更新头像显示
+        self._load_friends()
     
     def show_add_friend_dialog(self):
         """显示添加好友对话框"""
@@ -2183,6 +2759,295 @@ class ChatMainWindow(QMainWindow):
             QMessageBox.warning(self, '错误', '未连接到服务器')
 
 
+class AIAssistantDialog(QDialog):
+    """AI 智能助手对话框"""
+
+    def __init__(self, client, username, parent=None):
+        super().__init__(parent)
+        self.client = client
+        self.username = username
+        self._chat_history_data = []
+        self._pending_type = None
+        self.setWindowTitle("🤖 AI 智能助手 - Nova Chatting")
+        self.setMinimumSize(700, 800)
+        self._setup_ui()
+        # 注册回调
+        if self.client:
+            for rt in ['ai_chat_response', 'ai_summarize_response', 'ai_translate_response',
+                        'ai_polish_response', 'ai_suggest_reply_response', 'ai_sentiment_response',
+                        'ai_clear_history_response', 'ai_history_response',
+                        'ai_toggle_auto_reply_response', 'ai_settings_response',
+                        'ai_smart_replies_response']:
+                self.client.register_callback(rt, lambda m, t=rt: self.handle_ai_response(t, m))
+            # 加载历史
+            self.client.ai_get_history()
+            self.client.ai_get_settings()
+
+    def _setup_ui(self):
+        self.setStyleSheet("QDialog { background-color: #FAFAFA; }")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ===== 顶部标题栏 =====
+        header = QWidget()
+        header.setFixedHeight(60)
+        header.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #667eea, stop:1 #764ba2);")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 0, 20, 0)
+        title = QLabel("🤖 AI 智能助手")
+        title.setStyleSheet("color: white; font-size: 20px; font-weight: bold;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        auto_reply_btn = QPushButton("⚡ 自动应答")
+        auto_reply_btn.setStyleSheet("""
+            QPushButton { background-color: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 15px; padding: 6px 16px; font-size: 13px; }
+            QPushButton:hover { background-color: rgba(255,255,255,0.3); }
+        """)
+        auto_reply_btn.clicked.connect(self._toggle_auto_reply)
+        header_layout.addWidget(auto_reply_btn)
+        layout.addWidget(header)
+
+        # ===== 工具栏 =====
+        toolbar = QWidget()
+        toolbar.setStyleSheet("background-color: #F0F0FF; border-bottom: 1px solid #E0E0F0;")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(15, 8, 15, 8)
+        toolbar_layout.setSpacing(10)
+
+        tools = [
+            ("📝 摘要", self._do_summarize),
+            ("🌐 翻译", self._do_translate),
+            ("✨ 润色", self._do_polish),
+            ("💡 建议回复", self._do_suggest),
+            ("😊 情感分析", self._do_sentiment),
+            ("🗑 清除历史", self._do_clear),
+        ]
+        for text, handler in tools:
+            btn = QPushButton(text)
+            btn.setStyleSheet("""
+                QPushButton { background-color: white; color: #333; border: 1px solid #D0D0E0; border-radius: 15px; padding: 6px 14px; font-size: 13px; }
+                QPushButton:hover { background-color: #E8E8FF; border-color: #667eea; }
+            """)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(handler)
+            toolbar_layout.addWidget(btn)
+
+        layout.addWidget(toolbar)
+
+        # ===== 对话历史区域 =====
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+        self.chat_display.setStyleSheet("""
+            QTextEdit {
+                background-color: #FAFAFA;
+                border: none;
+                padding: 15px;
+                font-size: 15px;
+            }
+        """)
+        layout.addWidget(self.chat_display, 1)
+
+        # ===== 输入区域 =====
+        input_area = QWidget()
+        input_area.setStyleSheet("background-color: white; border-top: 1px solid #E0E0E0;")
+        input_layout = QVBoxLayout(input_area)
+        input_layout.setContentsMargins(15, 10, 15, 10)
+        input_layout.setSpacing(8)
+
+        self.input_box = QTextEdit()
+        self.input_box.setPlaceholderText("输入消息与 AI 对话，或使用上方工具栏进行摘要/翻译/润色...")
+        self.input_box.setMaximumHeight(100)
+        self.input_box.setStyleSheet("""
+            QTextEdit {
+                background-color: #F5F5F5;
+                border: 1px solid #E0E0E0;
+                border-radius: 10px;
+                padding: 12px;
+                font-size: 15px;
+            }
+            QTextEdit:focus { border: 1px solid #667eea; }
+        """)
+        input_layout.addWidget(self.input_box)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        send_btn = QPushButton("发送 💬")
+        send_btn.setFixedSize(120, 40)
+        send_btn.setCursor(Qt.PointingHandCursor)
+        send_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #667eea, stop:1 #764ba2);
+                color: white; border: none; border-radius: 20px; font-size: 15px; font-weight: bold;
+            }
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5a6fd6, stop:1 #6a4192); }
+        """)
+        send_btn.clicked.connect(self._send_ai_message)
+        btn_row.addWidget(send_btn)
+        input_layout.addLayout(btn_row)
+
+        layout.addWidget(input_area)
+
+    def _append_message(self, role, content):
+        """在对话区域追加消息"""
+        import html
+        safe = html.escape(content).replace("\n", "<br>")
+        if role == "user":
+            self.chat_display.append(
+                f'<table border="0" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">'
+                f'<tr><td width="100%" align="right">'
+                f'<div style="background-color: #95EC69; border-radius: 18px; padding: 12px 20px; display: inline-block; max-width: 70%;">'
+                f'<span style="color: #333; font-size: 15px;">{safe}</span>'
+                f'</div></td></tr></table>'
+            )
+        else:
+            self.chat_display.append(
+                f'<table border="0" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">'
+                f'<tr><td width="100%" align="left">'
+                f'<div style="background-color: #F0F0FF; border: 1px solid #D0D0FF; border-radius: 18px; padding: 12px 20px; display: inline-block; max-width: 70%;">'
+                f'<span style="color: #333; font-size: 15px;">🤖 {safe}</span>'
+                f'</div></td></tr></table>'
+            )
+        # 滚动到底部
+        self.chat_display.moveCursor(QTextCursor.End)
+
+    def _send_ai_message(self):
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            return
+        self._append_message("user", text)
+        self._chat_history_data.append({"role": "user", "content": text})
+        self.client.ai_chat(text)
+        self.input_box.clear()
+
+    def _do_summarize(self):
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            text = self._get_selected_text_or_prompt("请输入要摘要的文本")
+            if not text:
+                return
+        self._append_message("user", f"[摘要请求] {text[:50]}...")
+        self.client.ai_summarize(text)
+
+    def _do_translate(self):
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            text = self._get_selected_text_or_prompt("请输入要翻译的文本")
+            if not text:
+                return
+        self._append_message("user", f"[翻译请求] {text[:50]}...")
+        self.client.ai_translate(text)
+
+    def _do_polish(self):
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            text = self._get_selected_text_or_prompt("请输入要润色的文本")
+            if not text:
+                return
+        self._append_message("user", f"[润色请求] {text[:50]}...")
+        self.client.ai_polish(text)
+
+    def _do_suggest(self):
+        history_text = ""
+        for m in self._chat_history_data[-5:]:
+            role = "我" if m["role"] == "user" else "AI"
+            history_text += f"{role}: {m['content']}\n"
+        self._append_message("user", "[请求智能回复建议]")
+        self.client.ai_suggest_reply(history_text)
+
+    def _do_sentiment(self):
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            text = self._get_selected_text_or_prompt("请输入要分析的文本")
+            if not text:
+                return
+        self._append_message("user", f"[情感分析] {text[:50]}...")
+        self.client.ai_sentiment(text)
+
+    def _do_clear(self):
+        reply = QMessageBox.question(self, "确认", "确定清除所有 AI 对话历史？",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.client.ai_clear_history()
+            self.chat_display.clear()
+            self._chat_history_data.clear()
+            self._append_message("assistant", "对话历史已清除 ✨")
+
+    def _toggle_auto_reply(self):
+        self._auto_reply_state = not getattr(self, '_auto_reply_state', False)
+        self.client.ai_toggle_auto_reply(self._auto_reply_state)
+        state_text = "已开启" if self._auto_reply_state else "已关闭"
+        self._append_message("assistant", f"自动应答{state_text}")
+
+    def _get_selected_text_or_prompt(self, hint):
+        from PyQt5.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getMultiLineText(self, "输入文本", hint, "")
+        return text.strip() if ok else ""
+
+    def handle_ai_response(self, msg_type, msg):
+        """处理 AI 服务端响应"""
+        if msg_type == 'ai_chat_response':
+            if msg.get('success'):
+                content = msg.get('content', '')
+                self._append_message("assistant", content)
+                self._chat_history_data.append({"role": "assistant", "content": content})
+            else:
+                self._append_message("assistant", f"❌ {msg.get('message', '未知错误')}")
+
+        elif msg_type == 'ai_summarize_response':
+            if msg.get('success'):
+                self._append_message("assistant", f"📝 摘要结果：\n{msg.get('content', '')}")
+            else:
+                self._append_message("assistant", f"❌ 摘要失败: {msg.get('message', '')}")
+
+        elif msg_type == 'ai_translate_response':
+            if msg.get('success'):
+                self._append_message("assistant", f"🌐 翻译结果：\n{msg.get('content', '')}")
+            else:
+                self._append_message("assistant", f"❌ 翻译失败: {msg.get('message', '')}")
+
+        elif msg_type == 'ai_polish_response':
+            if msg.get('success'):
+                self._append_message("assistant", f"✨ 润色结果：\n{msg.get('content', '')}")
+            else:
+                self._append_message("assistant", f"❌ 润色失败: {msg.get('message', '')}")
+
+        elif msg_type == 'ai_suggest_reply_response':
+            if msg.get('success'):
+                suggestions = msg.get('suggestions', [])
+                text = "💡 建议回复：\n" + "\n".join(f"  {i+1}. {s}" for i, s in enumerate(suggestions))
+                self._append_message("assistant", text)
+            else:
+                self._append_message("assistant", f"❌ 获取建议失败: {msg.get('message', '')}")
+
+        elif msg_type == 'ai_sentiment_response':
+            if msg.get('success'):
+                self._append_message("assistant", f"😊 情感分析：\n{msg.get('content', '')}")
+            else:
+                self._append_message("assistant", f"❌ 情感分析失败: {msg.get('message', '')}")
+
+        elif msg_type == 'ai_clear_history_response':
+            self._append_message("assistant", "🗑 历史已清除")
+
+        elif msg_type == 'ai_history_response':
+            if msg.get('success'):
+                history = msg.get('history', [])
+                if history:
+                    for h in history:
+                        self._append_message(h.get('role', 'assistant'), h.get('content', ''))
+
+        elif msg_type == 'ai_toggle_auto_reply_response':
+            pass  # 已在 _toggle_auto_reply 中处理
+
+        elif msg_type == 'ai_settings_response':
+            if msg.get('success'):
+                self._auto_reply_state = msg.get('auto_reply_enabled', False)
+
+    def closeEvent(self, event):
+        self.client.register_callback('ai_chat_response', None)
+        event.accept()
+
+
 class FileDownloadDialog(QDialog):
     """文件下载对话框"""
     def __init__(self, from_username, file_name, file_data, parent=None):
@@ -2305,9 +3170,10 @@ class ProfileDialog(QDialog):
         super().__init__(parent)
         self.username = username
         self.client = client
+        self.parent_window = parent  # 保存父窗口引用，用于刷新
         self.avatar_path = getattr(client, 'avatar', '')  # 保存当前头像路径
         self.setWindowTitle('个人资料')
-        self.setFixedSize(450, 550)
+        self.setFixedSize(450, 600)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -2414,6 +3280,16 @@ class ProfileDialog(QDialog):
         self.username_input = QLineEdit(self.username)
         self.username_input.setReadOnly(True)
         form_layout.addRow(username_label, self.username_input)
+        
+        # 昵称
+        nickname_label = QLabel('昵称:')
+        self.nickname_input = QLineEdit()
+        self.nickname_input.setPlaceholderText('输入昵称')
+        # 获取当前昵称
+        current_nickname = getattr(self.client, 'nickname', '')
+        if current_nickname:
+            self.nickname_input.setText(current_nickname)
+        form_layout.addRow(nickname_label, self.nickname_input)
         
         # 新密码
         password_label = QLabel('新密码:')
@@ -2563,6 +3439,7 @@ class ProfileDialog(QDialog):
         """保存个人资料"""
         password = self.password_input.text()
         confirm = self.confirm_input.text()
+        nickname = self.nickname_input.text().strip()
         
         if password:
             if len(password) < 6:
@@ -2584,14 +3461,24 @@ class ProfileDialog(QDialog):
             if self.avatar_path:
                 update_data['avatar'] = self.avatar_path
             
+            if nickname:
+                update_data['nickname'] = nickname
+            
             if update_data:
                 # 发送更新请求
                 success = self.client.update_profile(**update_data)
                 
                 if success:
-                    # 更新客户端的头像信息
+                    # 更新客户端的头像和昵称信息
                     if self.avatar_path:
                         self.client.avatar = self.avatar_path
+                    if nickname:
+                        self.client.nickname = nickname
+                    
+                    # 通知主界面刷新显示
+                    if self.parent_window:
+                        self.parent_window.refresh_user_display()
+                    
                     QMessageBox.information(self, '成功', '个人资料更新成功！')
                     self.accept()
                 else:
