@@ -846,7 +846,7 @@ class ServerMainWindow(QMainWindow):
             
         try:
             if not hasattr(self, 'user_manager_window') or not self.user_manager_window:
-                self.user_manager_window = UserManagerWindow(self.db)
+                self.user_manager_window = UserManagerWindow(self.db, self.server)
             # 始终将user_manager_window引用传递给server，确保server能访问到最新的窗口实例
             if self.server:
                 self.server.user_manager_window = self.user_manager_window
