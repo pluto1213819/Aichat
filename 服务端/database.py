@@ -180,6 +180,117 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"[ERROR] 数据库初始化失败: {e}")
             raise
+
+    def delete_friend(self, username, friend_username):
+        try:
+            user = self.get_user_by_username(username)
+            friend = self.get_user_by_username(friend_username)
+            if not user or not friend:
+                return False
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)",
+                           (user['id'], friend['id'], friend['id'], user['id']))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            if deleted:
+                logger.info(f"[OK] Friend deleted: {username} <-> {friend_username}")
+            return deleted
+        except Exception as e:
+            logger.error(f"[ERROR] delete_friend: {e}")
+            return False
+
+    def search_groups(self, keyword):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT g.id, g.name, g.description, g.creator_id, COUNT(gm.user_id) as member_count "
+                "FROM groups g LEFT JOIN group_members gm ON g.id = gm.group_id "
+                "WHERE g.name LIKE ? GROUP BY g.id",
+                (f'%{keyword}%',))
+            groups = [{'id': r[0], 'name': r[1], 'description': r[2] or '', 'creator_id': r[3], 'member_count': r[4]} for r in cursor.fetchall()]
+            conn.close()
+            return groups
+        except Exception as e:
+            logger.error(f"[ERROR] search_groups: {e}")
+            return []
+
+    def get_group_by_id(self, group_id):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, name, description, creator_id FROM groups WHERE id = ?', (group_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return {'id': row[0], 'name': row[1], 'description': row[2] or '', 'creator_id': row[3]}
+            return None
+        except Exception as e:
+            logger.error(f"[ERROR] get_group_by_id: {e}")
+            return None
+
+    def is_group_member(self, group_id, user_id):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?', (group_id, user_id))
+            result = cursor.fetchone() is not None
+            conn.close()
+            return result
+        except Exception as e:
+            logger.error(f"[ERROR] is_group_member: {e}")
+            return False
+
+    def get_group_chat_history(self, group_id, limit=50):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT m.id, m.sender_id, m.content, m.message_type, m.created_at, u.username "
+                "FROM messages m JOIN users u ON m.sender_id = u.id "
+                "WHERE m.group_id = ? ORDER BY m.created_at DESC LIMIT ?",
+                (group_id, limit))
+            messages = [{'id': r[0], 'sender_id': r[1], 'content': r[2], 'message_type': r[3], 'created_at': r[4], 'sender_username': r[5]} for r in reversed(cursor.fetchall())]
+            conn.close()
+            return messages
+        except Exception as e:
+            logger.error(f"[ERROR] get_group_chat_history: {e}")
+            return []
+
+    # ===== AI 智能体相关表 =====
+            # AI 对话历史表
+            cursor.execute(
+                'CREATE TABLE IF NOT EXISTS ai_conversations ('
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                'username TEXT NOT NULL, '
+                'role TEXT NOT NULL, '
+                'content TEXT NOT NULL, '
+                "created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+
+            # AI 用户配置表
+            cursor.execute(
+                'CREATE TABLE IF NOT EXISTS ai_settings ('
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                'username TEXT UNIQUE NOT NULL, '
+                'auto_reply_enabled INTEGER DEFAULT 0, '
+                "preferred_lang TEXT DEFAULT '中文', "
+                'created_at TEXT DEFAULT CURRENT_TIMESTAMP, '
+                "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ai_conv_username ON ai_conversations(username)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ai_settings_username ON ai_settings(username)')
+            
+            conn.commit()
+            conn.close()
+            logger.info(f"[OK] 数据库初始化完成: {os.path.abspath(self.db_path)}")
+            
+        except Exception as e:
+            logger.error(f"[ERROR] 数据库初始化失败: {e}")
+            raise
     
     def _hash_password(self, password: str) -> str:
         """使用SHA-256哈希密码"""
@@ -1141,4 +1252,77 @@ class UserDatabase:
             logger.error(f"[ERROR] 删除用户失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return False
+
+    # ===== AI 智能体相关数据库方法 =====
+
+    def save_ai_message(self, username, role, content):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT INTO ai_conversations (username, role, content) VALUES (?, ?, ?)',
+                (username, role, content)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"[ERROR] save_ai_message: {e}")
+            return False
+
+    def get_ai_history(self, username, limit=50):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT role, content, created_at FROM ai_conversations WHERE username = ? ORDER BY id DESC LIMIT ?',
+                (username, limit)
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            return [{'role': r[0], 'content': r[1], 'created_at': r[2]} for r in reversed(rows)]
+        except Exception as e:
+            logger.error(f"[ERROR] get_ai_history: {e}")
+            return []
+
+    def clear_ai_history(self, username):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM ai_conversations WHERE username = ?', (username,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"[ERROR] clear_ai_history: {e}")
+            return False
+
+    def get_ai_settings(self, username):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT auto_reply_enabled, preferred_lang FROM ai_settings WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return {'auto_reply_enabled': bool(row[0]), 'preferred_lang': row[1]}
+            return {'auto_reply_enabled': False, 'preferred_lang': '中文'}
+        except Exception as e:
+            logger.error(f"[ERROR] get_ai_settings: {e}")
+            return {'auto_reply_enabled': False, 'preferred_lang': '中文'}
+
+    def save_ai_settings(self, username, auto_reply=False, lang='中文'):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT OR REPLACE INTO ai_settings (username, auto_reply_enabled, preferred_lang, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
+                (username, int(auto_reply), lang)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"[ERROR] save_ai_settings: {e}")
             return False
